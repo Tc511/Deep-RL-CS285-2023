@@ -35,10 +35,17 @@ class IQLAgent(AWACAgent):
         self,
         observations: torch.Tensor,
         actions: torch.Tensor,
-        action_dist: Optional[torch.distributions.Categorical] = None,
+        action_dist: Optional[torch.distributions.Categorical] = None, # ?????
     ):
         # TODO(student): Compute advantage with IQL
-        return ...
+        qa_target_values = self.target_critic(observations)
+        q_target_values = qa_target_values.gather(dim=1, index=actions.unsqueeze(1))
+
+        vs = self.value_critic(observations)
+
+        advantage = q_target_values - vs
+
+        return advantage
 
     def update_q(
         self,
@@ -52,7 +59,11 @@ class IQLAgent(AWACAgent):
         Update Q(s, a)
         """
         # TODO(student): Update Q(s, a) to match targets (based on V)
-        loss = ...
+        target_values = rewards.unsqueeze(dim=1) + \
+                            self.discount * torch.logical_not(dones.unsqueeze(dim=1)) * self.value_critic(next_observations)
+        qa_values = self.critic(observations)
+        q_values = qa_values.gather(dim=1, index=actions.unsqueeze(dim=1)) 
+        loss = self.critic_loss(q_values, target_values)
 
         self.critic_optimizer.zero_grad()
         loss.backward()
@@ -78,7 +89,9 @@ class IQLAgent(AWACAgent):
         Compute the expectile loss for IQL
         """
         # TODO(student): Compute the expectile loss
-        return ...
+        diff = target_qs - vs
+        # |expectile - 1(diff<0)| * diff^2
+        return (expectile - diff.le(0).float()).abs() * diff.pow(2)
 
     def update_v(
         self,
@@ -89,9 +102,13 @@ class IQLAgent(AWACAgent):
         Update the value network V(s) using targets Q(s, a)
         """
         # TODO(student): Compute target values for V(s)
+        vs = self.value_critic(observations)
+
+        qa_target_values = self.target_critic(observations)
+        target_values = qa_target_values.gather(dim=1, index=actions.unsqueeze(dim=1))
 
         # TODO(student): Update V(s) using the loss from the IQL paper
-        loss = ...
+        loss = torch.mean(self.iql_expectile_loss(self.expectile, vs, target_values))
 
         self.value_critic_optimizer.zero_grad()
         loss.backward()

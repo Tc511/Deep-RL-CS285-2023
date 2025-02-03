@@ -38,6 +38,7 @@ def run_training_loop(args):
     max_ep_len = args.ep_len or env.spec.max_episode_steps
 
     ob_dim = env.observation_space.shape[0]
+    
     ac_dim = env.action_space.n if discrete else env.action_space.shape[0]
 
     # simulation timestep, will be used for video saving
@@ -70,7 +71,8 @@ def run_training_loop(args):
         print(f"\n********** Iteration {itr} ************")
         # TODO: sample `args.batch_size` transitions using utils.sample_trajectories
         # make sure to use `max_ep_len`
-        trajs, envsteps_this_batch = None, None  # TODO
+        trajs, envsteps_this_batch = utils.sample_trajectories(env, agent.actor, args.batch_size, 
+                                                               max_ep_len, render=False)  # TODO
         total_envsteps += envsteps_this_batch
 
         # trajs should be a list of dictionaries of NumPy arrays, where each dictionary corresponds to a trajectory.
@@ -78,7 +80,8 @@ def run_training_loop(args):
         trajs_dict = {k: [traj[k] for traj in trajs] for k in trajs[0]}
 
         # TODO: train the agent using the sampled trajectories and the agent's update function
-        train_info: dict = None
+        train_info: dict = agent.update(trajs_dict["observation"], trajs_dict["action"], 
+                                        trajs_dict["reward"], trajs_dict["terminal"])
 
         if itr % args.scalar_log_freq == 0:
             # save eval metrics

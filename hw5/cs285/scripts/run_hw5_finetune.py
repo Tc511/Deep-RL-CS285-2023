@@ -49,17 +49,50 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
     observation = None
 
     # Replay buffer
-    replay_buffer = ReplayBuffer(capacity=config["total_steps"])
+    # replay_buffer = ReplayBuffer(capacity=config["total_steps"])
 
     observation = env.reset()
 
     recent_observations = []
+    
+    with open(os.path.join(args.dataset_dir, f"{config['dataset_name']}.pkl"), "rb") as f:
+        replay_buffer = pickle.load(f)
+    replay_buffer.max_capacity = config["total_steps"]
 
     num_offline_steps = config["offline_steps"]
     num_online_steps = config["total_steps"] - num_offline_steps
 
     for step in tqdm.trange(config["total_steps"], dynamic_ncols=True):
         # TODO(student): Borrow code from another online training script here. Only run the online training loop after `num_offline_steps` steps.
+        if step >= num_online_steps: # online phase
+            if exploration_schedule is not None:
+                epsilon = exploration_schedule.value(step)
+                action = agent.get_action(observation, epsilon)
+            else:
+                epsilon = None
+                action = agent.get_action(observation)
+            
+            next_observation, reward, done, info = env.step(action)
+            next_observation = np.asarray(next_observation)
+
+            truncated = info.get("TimeLimit.truncated", False)
+
+            replay_buffer.insert(
+                observation=observation,
+                action=action,
+                reward=reward,
+                done=done and not truncated,
+                next_observation=next_observation,
+            )
+            recent_observations.append(observation)
+
+            if done:
+                observation = env.reset()
+
+                logger.log_scalar(info["episode"]["r"], "train_return", step)
+                logger.log_scalar(info["episode"]["l"], "train_ep_len", step)
+            else:
+                observation = next_observation
 
         # Main training loop
         batch = replay_buffer.sample(config["batch_size"])
@@ -77,7 +110,7 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
         )
 
         # Logging code
-        if epsilon is not None:
+        if step >= num_online_steps and epsilon is not None:
             update_info["epsilon"] = epsilon
 
         if step % args.log_interval == 0:
@@ -107,7 +140,7 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
                 logger.log_scalar(np.max(ep_lens), "eval/ep_len_max", step)
                 logger.log_scalar(np.min(ep_lens), "eval/ep_len_min", step)
 
-        if step % args.visualize_interval == 0:
+        if step >= num_online_steps and step % args.visualize_interval == 0:
             env_pointmass: Pointmass = env.unwrapped
             observations = np.stack(recent_observations)
             recent_observations = []

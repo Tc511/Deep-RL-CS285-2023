@@ -26,8 +26,8 @@ class RNDAgent(DQNAgent):
         super().__init__(
             observation_shape=observation_shape, num_actions=num_actions, **kwargs
         )
-        self.rnd_weight = rnd_weight
-
+        self.rnd_weight = rnd_weight #???
+        
         self.rnd_net = make_rnd_network(observation_shape)
         self.rnd_target_net = make_target_rnd_network(observation_shape)
 
@@ -46,7 +46,7 @@ class RNDAgent(DQNAgent):
         Update the RND network using the observations.
         """
         # TODO(student): update the RND network
-        loss = ...
+        loss = nn.functional.mse_loss(self.rnd_net(obs), self.rnd_target_net(obs))
 
         self.rnd_optimizer.zero_grad()
         loss.backward()
@@ -65,9 +65,11 @@ class RNDAgent(DQNAgent):
     ):
         with torch.no_grad():
             # TODO(student): Compute RND bonus for batch and modify rewards
-            rnd_error = ...
+            rnd_error = torch.norm(self.rnd_net(next_observations) - self.rnd_target_net(next_observations), dim=1)
             assert rnd_error.shape == rewards.shape
-            rewards = ...
+            rnd_error = (rnd_error - torch.mean(rnd_error)) / (torch.std(rnd_error) + 1e-6)
+
+            rewards = rewards + rnd_error
 
         metrics = super().update(observations, actions, rewards, next_observations, dones, step)
 
